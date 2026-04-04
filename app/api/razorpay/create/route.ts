@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 
+export const dynamic = 'force-dynamic'
+
 export async function POST(req: NextRequest) {
   const keyId     = process.env.RAZORPAY_KEY_ID     || ''
   const keySecret = process.env.RAZORPAY_KEY_SECRET  || ''
