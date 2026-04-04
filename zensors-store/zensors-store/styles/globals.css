@@ -1,0 +1,38 @@
+@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300;1,400&family=DM+Sans:wght@300;400;500&display=swap');
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body { @apply bg-navy text-cream font-body antialiased overflow-x-hidden; }
+  ::selection { background: rgba(201,168,76,0.25); }
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-track { background: #0B1120; }
+  ::-webkit-scrollbar-thumb { background: rgba(201,168,76,0.35); border-radius: 2px; }
+}
+
+@layer components {
+  .gold-text {
+    background: linear-gradient(90deg,#C9A84C,#E8C96A,#C9A84C);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+  }
+  .btn-gold {
+    @apply inline-flex items-center justify-center gap-2 bg-gradient-to-r from-gold to-gold-light text-navy font-body font-medium text-[10px] tracking-[2.5px] uppercase px-8 py-3.5 transition-all duration-300 hover:-translate-y-0.5 hover:shadow-lg hover:shadow-gold/25 active:translate-y-0;
+  }
+  .btn-outline {
+    @apply inline-flex items-center justify-center gap-2 border border-gold/30 text-cream font-body text-[10px] tracking-[2.5px] uppercase px-8 py-3.5 transition-all duration-300 hover:border-gold hover:text-gold hover:-translate-y-0.5;
+  }
+  .btn-blue {
+    @apply inline-flex items-center justify-center gap-2 bg-gradient-to-r from-[#1E4D8C] to-[#2563EB] text-white font-body font-medium text-[10px] tracking-[2.5px] uppercase px-8 py-3.5 transition-all duration-300 hover:-translate-y-0.5 hover:shadow-lg hover:shadow-blue-500/25;
+  }
+  .section-tag {
+    @apply text-gold text-[10px] tracking-[4px] uppercase flex items-center gap-3 mb-3 font-body;
+  }
+  .section-tag::before { content:''; @apply block w-7 h-px bg-gold flex-shrink-0; }
+  .section-title { @apply font-display text-4xl lg:text-[52px] font-light text-cream leading-[1.05]; }
+  .glass { background:rgba(15,26,46,0.8); backdrop-filter:blur(20px); border:1px solid rgba(59,130,246,0.15); }
+  .card { @apply bg-navy-card border border-blue-900/20; }
+  .skeleton { background:linear-gradient(90deg,#111E35 25%,#162540 50%,#111E35 75%); background-size:200% 100%; animation:shimmer 1.5s infinite; }
+}
