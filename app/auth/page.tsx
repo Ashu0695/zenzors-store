@@ -26,7 +26,7 @@ export default function AuthPage() {
         const { error } = await sb.auth.signInWithPassword({ email, password })
         if (error) throw error
         toast.success('Welcome back!')
-        router.push('/account')
+        router.push('/')
       } else {
         const { error } = await sb.auth.signUp({ email, password, options:{ data:{ full_name:name } } })
         if (error) throw error

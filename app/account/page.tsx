@@ -29,16 +29,21 @@ export default function AccountPage() {
 
   useEffect(() => {
     const load = async () => {
-      const { data: { user } } = await sb.auth.getUser()
-      if (!user) { router.push('/auth'); return }
-      const { data: p } = await sb.from('profiles').select('*').eq('id', user.id).single()
-      setProfile(p)
-      const { data: o } = await sb.from('orders').select('*').eq('user_id', user.id).order('created_at',{ascending:false})
-      setOrders(o || [])
-      setLoading(false)
+      try {
+        const { data: { user } } = await sb.auth.getUser()
+        if (!user) { router.push('/auth'); return }
+        const { data: p, error: pErr } = await sb.from('profiles').select('*').eq('id', user.id).single()
+        if (p) setProfile(p)
+        const { data: o, error: oErr } = await sb.from('orders').select('*').eq('user_id', user.id).order('created_at',{ascending:false})
+        setOrders(o || [])
+      } catch (err) {
+        console.error('Account load error:', err)
+      } finally {
+        setLoading(false)
+      }
     }
     load()
-  }, [])
+  }, [router, sb])
 
   const handleLogout = async () => {
     await sb.auth.signOut()

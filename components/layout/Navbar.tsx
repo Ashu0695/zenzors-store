@@ -8,7 +8,8 @@ import { useWishlist } from '@/hooks/useWishlist'
 
 // Slugs MUST match DUMMY_CATEGORIES slugs in dummyData.ts
 const LINKS = [
-  { label:'Collections', href:'/products', sub:[
+  { label:'Home',         href:'/'                       },
+  { label:'Collections',  href:'/products', sub:[
     { label:'Fine Jewelry', href:'/products?category=fine-jewelry' },
     { label:'School Bags',  href:'/products?category=school-bags'  },
     { label:'Bottles',      href:'/products?category=bottles'      },
@@ -25,6 +26,7 @@ export default function Navbar() {
   const [menuOpen,  setMenuOpen]  = useState(false)
   const [activeSub, setActiveSub] = useState<string|null>(null)
   const [mounted,   setMounted]   = useState(false)
+  const [userName,  setUserName]  = useState<string|null>(null)
   const count      = useCartStore(s => s.count())
   const wishCount  = useWishlist(s => s.items.length)
   const toggleCart = useCartStore(s => s.toggleCart)
@@ -34,6 +36,16 @@ export default function Navbar() {
     const fn = () => setScrolled(window.scrollY > 20)
     window.addEventListener('scroll', fn)
     fn()
+
+    import('@/lib/supabase/client').then(({ createClient }) => {
+      createClient().auth.getUser().then(({ data }) => {
+        if (data.user) {
+          createClient().from('profiles').select('full_name').eq('id', data.user.id).single()
+            .then(({data: p}) => setUserName(p?.full_name?.split(' ')[0] || 'User'))
+        }
+      })
+    })
+
     return () => window.removeEventListener('scroll', fn)
   }, [])
 
@@ -89,7 +101,16 @@ export default function Navbar() {
           {/* Icons */}
           <div className="flex items-center gap-5">
             <Link href="/search" className="hidden lg:block text-cream/55 hover:text-cream transition-colors"><Search size={18}/></Link>
-            <Link href="/account" className="hidden lg:block text-cream/55 hover:text-cream transition-colors"><User size={18}/></Link>
+            {userName ? (
+              <Link href="/account" className="hidden lg:flex items-center gap-2 text-[10px] tracking-widest uppercase text-cream/70 hover:text-cream transition-colors">
+                <span className="w-6 h-6 rounded-full bg-gold/10 text-gold flex items-center justify-center border border-gold/30 font-medium">{userName[0].toUpperCase()}</span>
+                {userName}
+              </Link>
+            ) : (
+              <Link href="/auth" className="hidden lg:flex items-center gap-1.5 text-[10px] tracking-[1.5px] uppercase text-cream/55 hover:text-cream transition-colors border border-blue-900/40 px-3 py-1.5 rounded-sm">
+                <User size={12}/> Sign In
+              </Link>
+            )}
             <Link href="/wishlist" className="relative hidden lg:block text-cream/55 hover:text-cream transition-colors">
               <Heart size={18}/>
               {mounted && wishCount>0 && <span className="absolute -top-1.5 -right-1.5 bg-gold text-navy text-[9px] font-medium w-4 h-4 rounded-full flex items-center justify-center">{wishCount}</span>}
@@ -144,7 +165,11 @@ export default function Navbar() {
                 ))}
               </ul>
               <div className="flex gap-6 pt-8 border-t border-white/10">
-                <Link href="/account"  onClick={() => setMenuOpen(false)}><User  size={20} className="text-cream/55"/></Link>
+                <Link href={userName ? "/account" : "/auth"}  onClick={() => setMenuOpen(false)}>
+                  {userName ? (
+                    <div className="flex items-center gap-2"><span className="w-7 h-7 rounded-full bg-gold/10 text-gold flex items-center justify-center border border-gold/30 font-medium text-xs">{userName[0].toUpperCase()}</span> <span className="text-xs text-cream/70 uppercase tracking-widest">{userName}</span></div>
+                  ) : <User size={20} className="text-cream/55"/>}
+                </Link>
                 <Link href="/wishlist" onClick={() => setMenuOpen(false)}><Heart size={20} className="text-cream/55"/></Link>
                 <Link href="/search"   onClick={() => setMenuOpen(false)}><Search size={20} className="text-cream/55"/></Link>
               </div>

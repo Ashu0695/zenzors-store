@@ -1,6 +1,6 @@
 'use client'
 export const dynamic = 'force-dynamic'
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import { useRouter } from 'next/navigation'
 import { ShieldCheck, Tag, Loader2 } from 'lucide-react'
@@ -53,11 +53,25 @@ export default function CheckoutPage() {
   const [discount,  setDiscount]  = useState(0)
   const [couponMsg, setCouponMsg] = useState('')
   const [placing,   setPlacing]   = useState(false)
+  const [checkingAuth, setCheckingAuth] = useState(true)
 
   // Stable onChange handler — doesn't change identity on re-renders
   const handleFieldChange = useCallback((name: string, value: string) => {
     setForm(prev => ({ ...prev, [name]: value }))
   }, [])
+
+  useEffect(() => {
+    import('@/lib/supabase/client').then(({ createClient }) => {
+      createClient().auth.getUser().then(({ data }) => {
+        if (!data.user) {
+          toast.error('Please sign in to complete your checkout')
+          router.push('/auth')
+        } else {
+          setCheckingAuth(false)
+        }
+      })
+    })
+  }, [router])
 
   const subtotal   = total()
   const shipping   = subtotal >= 999 ? 0 : 99
@@ -99,6 +113,34 @@ export default function CheckoutPage() {
       return
     }
     setPlacing(true)
+    const saveOrder = async (payId: string) => {
+      try {
+        const sb = createClient()
+        const { data: { user } } = await sb.auth.getUser()
+        const { data: order } = await sb.from('orders').insert({
+          user_id: user?.id,
+          subtotal, discount, shipping, total: finalTotal,
+          status: 'confirmed', payment_status: 'paid',
+          payment_id: payId,
+          coupon_code: coupon || null,
+          shipping_address: {
+            name:form.name, phone:form.phone, line1:form.line1,
+            line2:form.line2, city:form.city, state:form.state, pincode:form.pincode
+          },
+        }).select().single()
+        if (order) {
+          await sb.from('order_items').insert(
+            items.map(i => ({
+              order_id: order.id, product_id: i.product.id,
+              quantity: i.quantity, price: i.product.price, variant: i.variant?.value
+            }))
+          )
+        }
+      } catch (e) {
+        console.error('Order save failed:', e)
+      }
+    }
+
     try {
       const res = await fetch('/api/razorpay/create', {
         method: 'POST',
@@ -110,9 +152,10 @@ export default function CheckoutPage() {
       // ── DEMO MODE (no Razorpay credentials configured yet) ─────────────
       if (json.demo || !json.orderId || json.orderId?.startsWith('demo_')) {
         // Simulate successful order without real payment
+        await saveOrder(json.orderId || `demo_${Date.now()}`)
         clearCart()
-        toast.success('🎉 Demo order placed! Add real Razorpay keys to enable live payments.')
-        router.push('/')
+        toast.success('🎉 Demo order placed successfully!')
+        router.push('/account')
         setPlacing(false)
         return
       }
@@ -129,29 +172,7 @@ export default function CheckoutPage() {
         prefill: { name: form.name, email: form.email, contact: form.phone },
         theme: { color: '#C9A84C' },
         handler: async (response: any) => {
-          try {
-            const sb = createClient()
-            const { data: { user } } = await sb.auth.getUser()
-            const { data: order } = await sb.from('orders').insert({
-              user_id: user?.id,
-              subtotal, discount, shipping, total: finalTotal,
-              status: 'confirmed', payment_status: 'paid',
-              payment_id: response.razorpay_payment_id,
-              coupon_code: coupon || null,
-              shipping_address: {
-                name:form.name, phone:form.phone, line1:form.line1,
-                line2:form.line2, city:form.city, state:form.state, pincode:form.pincode
-              },
-            }).select().single()
-            if (order) {
-              await sb.from('order_items').insert(
-                items.map(i => ({
-                  order_id: order.id, product_id: i.product.id,
-                  quantity: i.quantity, price: i.product.price, variant: i.variant?.value
-                }))
-              )
-            }
-          } catch { /* order save failed, payment done */ }
+          await saveOrder(response.razorpay_payment_id)
           clearCart()
           toast.success('Order placed successfully! 🎉')
           router.push('/account')
@@ -172,6 +193,14 @@ export default function CheckoutPage() {
           <p className="font-display text-3xl text-cream/20 mb-4">Your cart is empty</p>
           <button onClick={() => router.push('/products')} className="btn-gold">Start Shopping</button>
         </div>
+      </div>
+    </>
+  )
+
+  if (checkingAuth) return (
+    <><Navbar/><CartSidebar/>
+      <div className="pt-[72px] min-h-screen flex items-center justify-center">
+        <div className="w-10 h-10 border-2 border-gold/30 border-t-gold rounded-full animate-spin"/>
       </div>
     </>
   )

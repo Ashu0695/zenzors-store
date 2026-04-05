@@ -30,19 +30,15 @@ export default function FeaturedProducts() {
 
         const { data, error } = await q
         let finalData = data || []
-
-        if (finalData.length === 0 || error) {
-          let dummy = [...DUMMY_PRODUCTS]
-          if (active === 'New Arrivals')    dummy.sort((a,b) => b.created_at.localeCompare(a.created_at))
-          else if (active === 'Sale')       dummy = dummy.filter(p => p.compare_price !== null)
-          else if (active === 'Under ₹999') dummy = dummy.filter(p => p.price <= 999)
-          // 'All' → show everything
-          finalData = dummy.slice(0, 8)
+        
+        if (error) {
+           console.error("Featuredproducts error", error)
         }
 
         setProducts(finalData)
       } catch (err) {
-        setProducts(DUMMY_PRODUCTS.slice(0, 8))
+        console.error(err)
+        setProducts([])
       }
       setLoading(false)
     }
