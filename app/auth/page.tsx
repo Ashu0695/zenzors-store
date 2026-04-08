@@ -23,15 +23,62 @@ export default function AuthPage() {
     setLoading(true)
     try {
       if (mode === 'login') {
-        const { error } = await sb.auth.signInWithPassword({ email, password })
+        const { data, error } = await sb.auth.signInWithPassword({ email, password })
         if (error) throw error
+
+        // Block admin users from accessing the customer store
+        if (data.user) {
+          const { data: adminCheck } = await sb
+            .from('admin_users')
+            .select('id')
+            .eq('id', data.user.id)
+            .single()
+          if (adminCheck) {
+            await sb.auth.signOut()
+            toast.error('This account is for admin use only. Please use the admin panel.')
+            setLoading(false)
+            return
+          }
+
+          // Ensure profile row exists (keeps customer name in sync)
+          await sb.from('profiles').upsert({
+            id:        data.user.id,
+            email:     data.user.email || email,
+            full_name: data.user.user_metadata?.full_name || '',
+          }, { onConflict: 'id', ignoreDuplicates: false })
+        }
+
         toast.success('Welcome back!')
         router.push('/')
       } else {
-        const { error } = await sb.auth.signUp({ email, password, options:{ data:{ full_name:name } } })
+        // Registration
+        if (!name.trim()) { toast.error('Please enter your full name'); setLoading(false); return }
+        if (password.length < 6) { toast.error('Password must be at least 6 characters'); setLoading(false); return }
+
+        const { data, error } = await sb.auth.signUp({
+          email,
+          password,
+          options: { data: { full_name: name.trim() } },
+        })
         if (error) throw error
-        toast.success('Account created! Please check your email.')
-        setMode('login')
+
+        // Explicitly create profile row so admin can see the customer immediately
+        if (data.user) {
+          await sb.from('profiles').upsert({
+            id:        data.user.id,
+            email:     email,
+            full_name: name.trim(),
+            created_at: new Date().toISOString(),
+          }, { onConflict: 'id', ignoreDuplicates: false })
+        }
+
+        if (data.session) {
+          toast.success('Account created! Welcome to Zenzors.')
+          router.push('/')
+        } else {
+          toast('Please check your email to verify your account.', { icon: '📧' })
+          setMode('login')
+        }
       }
     } catch (err: any) {
       toast.error(err.message || 'Something went wrong')
@@ -47,7 +94,7 @@ export default function AuthPage() {
       </div>
 
       <motion.div initial={{ opacity:0,y:30 }} animate={{ opacity:1,y:0 }} transition={{ duration:0.7 }}
-        className="w-full max-w-md glass p-10 relative z-10">
+        className="w-full max-w-md glass p-8 sm:p-10 relative z-10">
 
         <Link href="/" className="block text-center mb-8">
           <span className="font-display text-2xl tracking-[7px] uppercase">ZEN<em className="gold-text not-italic">ZORS</em></span>
@@ -67,7 +114,7 @@ export default function AuthPage() {
           <AnimatePresence>
             {mode === 'register' && (
               <motion.div initial={{ opacity:0,height:0 }} animate={{ opacity:1,height:'auto' }} exit={{ opacity:0,height:0 }}>
-                <label className="block text-[10px] tracking-widest uppercase text-steel mb-1.5">Full Name</label>
+                <label className="block text-[10px] tracking-widest uppercase text-steel mb-1.5">Full Name *</label>
                 <input value={name} onChange={e=>setName(e.target.value)} placeholder="Your full name" required
                   className="w-full bg-navy-card border border-blue-900/20 px-4 py-3 text-sm text-cream placeholder:text-steel/40 focus:outline-none focus:border-gold/50"/>
               </motion.div>
@@ -75,15 +122,15 @@ export default function AuthPage() {
           </AnimatePresence>
 
           <div>
-            <label className="block text-[10px] tracking-widest uppercase text-steel mb-1.5">Email</label>
+            <label className="block text-[10px] tracking-widest uppercase text-steel mb-1.5">Email *</label>
             <input type="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="you@email.com" required
               className="w-full bg-navy-card border border-blue-900/20 px-4 py-3 text-sm text-cream placeholder:text-steel/40 focus:outline-none focus:border-gold/50"/>
           </div>
 
           <div>
-            <label className="block text-[10px] tracking-widest uppercase text-steel mb-1.5">Password</label>
+            <label className="block text-[10px] tracking-widest uppercase text-steel mb-1.5">Password *</label>
             <div className="relative">
-              <input type={showPwd?'text':'password'} value={password} onChange={e=>setPassword(e.target.value)} placeholder="••••••••" required
+              <input type={showPwd?'text':'password'} value={password} onChange={e=>setPassword(e.target.value)} placeholder="Min. 6 characters" required
                 className="w-full bg-navy-card border border-blue-900/20 px-4 py-3 pr-10 text-sm text-cream placeholder:text-steel/40 focus:outline-none focus:border-gold/50"/>
               <button type="button" onClick={() => setShowPwd(!showPwd)} className="absolute right-3 top-1/2 -translate-y-1/2 text-steel hover:text-cream">
                 {showPwd ? <EyeOff size={15}/> : <Eye size={15}/>}

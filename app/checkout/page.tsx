@@ -120,7 +120,7 @@ export default function CheckoutPage() {
         const { data: order } = await sb.from('orders').insert({
           user_id: user?.id,
           subtotal, discount, shipping, total: finalTotal,
-          status: 'confirmed', payment_status: 'paid',
+          status: 'pending', payment_status: 'paid',
           payment_id: payId,
           coupon_code: coupon || null,
           shipping_address: {

@@ -1,9 +1,9 @@
 'use client'
 export const dynamic = 'force-dynamic'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useParams } from 'next/navigation'
-import { motion } from 'framer-motion'
-import { ShoppingBag, Heart, Star, ChevronLeft, Truck, Shield, RefreshCw, Award } from 'lucide-react'
+import { motion, AnimatePresence } from 'framer-motion'
+import { ShoppingBag, Heart, Star, ChevronLeft, ChevronRight, Truck, Shield, RefreshCw, Award, Camera, Send, X, Loader2 } from 'lucide-react'
 import Link from 'next/link'
 import Navbar from '@/components/layout/Navbar'
 import Footer from '@/components/layout/Footer'
@@ -17,6 +17,34 @@ import type { Product, Review } from '@/types'
 import { DUMMY_PRODUCTS } from '@/lib/dummyData'
 import toast from 'react-hot-toast'
 
+// ── Star Rating Picker ──────────────────────────────────────────────────────
+function StarPicker({ value, onChange }: { value: number; onChange: (n: number) => void }) {
+  const [hovered, setHovered] = useState(0)
+  return (
+    <div className="flex gap-1">
+      {[1, 2, 3, 4, 5].map(n => (
+        <button
+          key={n}
+          type="button"
+          onClick={() => onChange(n)}
+          onMouseEnter={() => setHovered(n)}
+          onMouseLeave={() => setHovered(0)}
+          className="transition-transform hover:scale-110"
+        >
+          <Star
+            size={22}
+            className={
+              n <= (hovered || value)
+                ? 'fill-gold text-gold'
+                : 'text-steel hover:text-gold/50'
+            }
+          />
+        </button>
+      ))}
+    </div>
+  )
+}
+
 export default function ProductDetailPage() {
   const { slug }               = useParams<{ slug:string }>()
   const [product,  setProduct] = useState<Product|null>(null)
@@ -27,8 +55,57 @@ export default function ProductDetailPage() {
   const [variantId,setVariant] = useState<string|null>(null)
   const [tab,      setTab]     = useState<'desc'|'reviews'>('desc')
   const [loading,  setLoading] = useState(true)
+
+  // ── Auto-slideshow ──────────────────────────────────────────────────────
+  const slideTimer  = useRef<ReturnType<typeof setInterval>|null>(null)
+  const pauseTimer  = useRef<ReturnType<typeof setTimeout>|null>(null)
+  const imgCount    = useRef(0)
+
+  const stopSlide = useCallback(() => {
+    if (slideTimer.current)  { clearInterval(slideTimer.current);  slideTimer.current  = null }
+    if (pauseTimer.current)  { clearTimeout(pauseTimer.current);   pauseTimer.current  = null }
+  }, [])
+
+  const startSlide = useCallback(() => {
+    stopSlide()
+    if (imgCount.current <= 1) return
+    slideTimer.current = setInterval(() => {
+      setMainImg(i => (i + 1) % imgCount.current)
+    }, 3500)
+  }, [stopSlide])
+
+  // Pause slideshow for 8s after user manually changes image
+  const pauseSlide = useCallback(() => {
+    stopSlide()
+    pauseTimer.current = setTimeout(() => startSlide(), 8000)
+  }, [stopSlide, startSlide])
+
+  const goNext = useCallback(() => {
+    setMainImg(i => (i + 1) % imgCount.current)
+    pauseSlide()
+  }, [pauseSlide])
+
+  const goPrev = useCallback(() => {
+    setMainImg(i => (i - 1 + imgCount.current) % imgCount.current)
+    pauseSlide()
+  }, [pauseSlide])
+
+  // ── Review form state ───────────────────────────────────────────────────
+  const [reviewRating,  setReviewRating]  = useState(5)
+  const [reviewComment, setReviewComment] = useState('')
+  const [reviewFile,    setReviewFile]    = useState<File|null>(null)
+  const [reviewPreview, setReviewPreview] = useState<string|null>(null)
+  const [submitting,    setSubmitting]    = useState(false)
+  const [currentUserId, setCurrentUserId] = useState<string|null>(null)
+
   const addItem    = useCartStore(s => s.addItem)
   const { toggle, has } = useWishlist()
+
+  useEffect(() => {
+    createClient().auth.getUser().then(({ data }) => {
+      setCurrentUserId(data.user?.id || null)
+    })
+  }, [])
 
   useEffect(() => {
     if (!slug) return
@@ -38,20 +115,18 @@ export default function ProductDetailPage() {
         const { data: p, error } = await sb.from('products')
           .select('*,category:categories(name,slug),variants:product_variants(*)')
           .eq('slug', slug).single()
-        
+
         let foundProduct = p
-        
         if (!p || error) {
           foundProduct = DUMMY_PRODUCTS.find(dp => dp.slug === slug)
         }
-        
-        if (!foundProduct) {
-          setLoading(false)
-          return
-        }
+        if (!foundProduct) { setLoading(false); return }
 
         setProduct(foundProduct as Product)
+        imgCount.current = foundProduct.images?.length || 0
         setLoading(false)
+
+        if ((foundProduct.images?.length || 0) > 1) startSlide()
 
         const { data: rv } = await sb.from('reviews')
           .select('*,user:profiles(full_name)').eq('product_id', foundProduct.id).order('created_at',{ascending:false})
@@ -60,7 +135,6 @@ export default function ProductDetailPage() {
         const { data: rel, error: relErr } = await sb.from('products')
           .select('*,category:categories(name,slug)')
           .eq('category_id', foundProduct.category_id).neq('id', foundProduct.id).limit(4)
-        
         if (!rel || rel.length === 0 || relErr) {
           setRelated(DUMMY_PRODUCTS.filter(dp => dp.category_id === foundProduct.category_id && dp.id !== foundProduct.id).slice(0, 4))
         } else {
@@ -70,13 +144,61 @@ export default function ProductDetailPage() {
         const foundProduct = DUMMY_PRODUCTS.find(dp => dp.slug === slug)
         if (foundProduct) {
           setProduct(foundProduct as Product)
+          imgCount.current = foundProduct.images?.length || 0
           setRelated(DUMMY_PRODUCTS.filter(dp => dp.category_id === foundProduct.category_id && dp.id !== foundProduct.id).slice(0, 4))
         }
         setLoading(false)
       }
     }
     load()
+    return () => stopSlide()
   }, [slug])
+
+  // ── Submit Review ───────────────────────────────────────────────────────
+  const submitReview = async () => {
+    if (!currentUserId) { toast.error('Please sign in to submit a review'); return }
+    if (!reviewComment.trim()) { toast.error('Please write a comment'); return }
+    if (!product) return
+    setSubmitting(true)
+    try {
+      const sb = createClient()
+      let imageUrl: string | null = null
+
+      if (reviewFile) {
+        const ext  = reviewFile.name.split('.').pop()
+        const path = `reviews/${Date.now()}.${ext}`
+        const { error: upErr } = await sb.storage.from('product-images').upload(path, reviewFile)
+        if (!upErr) {
+          const { data: urlData } = sb.storage.from('product-images').getPublicUrl(path)
+          imageUrl = urlData.publicUrl
+        }
+      }
+
+      const payload: any = {
+        product_id: product.id,
+        user_id:    currentUserId,
+        rating:     reviewRating,
+        comment:    reviewComment.trim(),
+        created_at: new Date().toISOString(),
+      }
+      if (imageUrl) payload.images = [imageUrl]
+
+      const { error } = await sb.from('reviews').insert([payload])
+      if (error) { toast.error('Failed to submit review'); return }
+
+      toast.success('Review submitted!')
+      setReviewComment(''); setReviewRating(5); setReviewFile(null); setReviewPreview(null)
+
+      // Refresh reviews
+      const { data: rv } = await sb.from('reviews')
+        .select('*,user:profiles(full_name)').eq('product_id', product.id).order('created_at',{ascending:false})
+      setReviews(rv || [])
+    } catch {
+      toast.error('Something went wrong')
+    } finally {
+      setSubmitting(false)
+    }
+  }
 
   if (loading) return (
     <><Navbar/><CartSidebar/>
@@ -99,6 +221,7 @@ export default function ProductDetailPage() {
 
   const discount  = product.compare_price ? getDiscount(product.price, product.compare_price) : null
   const selVariant = product.variants?.find(v => v.id === variantId) || null
+  const images    = product.images || []
 
   const handleAddToCart = () => {
     addItem(product, qty, selVariant || undefined)
@@ -119,38 +242,87 @@ export default function ProductDetailPage() {
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 mb-20">
-            {/* Images */}
+            {/* ── Images ──────────────────────────────────────────────── */}
             <motion.div initial={{ opacity:0,x:-30 }} animate={{ opacity:1,x:0 }} transition={{ duration:0.7 }}>
-              <div className="relative overflow-hidden mb-3 flex items-center justify-center h-[480px]"
+              {/* Main image with arrows */}
+              <div className="relative overflow-hidden mb-3 flex items-center justify-center h-[480px] group"
                 style={{ background:'linear-gradient(145deg,#111E35,#162540)' }}>
-                {product.images?.[mainImg] ? (
-                  <img src={product.images[mainImg]} alt={product.name} className="w-full h-full object-contain"/>
-                ) : (
-                  <motion.div animate={{ y:[0,-10,0] }} transition={{ duration:3,repeat:Infinity,ease:'easeInOut' }}
-                    className="text-[120px] drop-shadow-[0_0_40px_rgba(201,168,76,0.3)]">
-                    {product.category?.slug==='fine-jewelry'?'💍':product.category?.slug==='school-bags'?'🎒':product.category?.slug==='bottles'?'🍶':'✨'}
+                <AnimatePresence mode="wait">
+                  <motion.div
+                    key={mainImg}
+                    initial={{ opacity:0, x:30 }}
+                    animate={{ opacity:1, x:0 }}
+                    exit={{ opacity:0, x:-30 }}
+                    transition={{ duration:0.4 }}
+                    className="absolute inset-0 flex items-center justify-center"
+                  >
+                    {images[mainImg] ? (
+                      <img src={images[mainImg]} alt={product.name} className="w-full h-full object-contain"/>
+                    ) : (
+                      <motion.div animate={{ y:[0,-10,0] }} transition={{ duration:3,repeat:Infinity,ease:'easeInOut' }}
+                        className="text-[120px] drop-shadow-[0_0_40px_rgba(201,168,76,0.3)]">
+                        {product.category?.slug==='fine-jewelry'?'💍':product.category?.slug==='school-bags'?'🎒':product.category?.slug==='bottles'?'🍶':'✨'}
+                      </motion.div>
+                    )}
                   </motion.div>
-                )}
+                </AnimatePresence>
+
                 {discount && (
-                  <span className="absolute top-4 left-4 bg-gradient-to-r from-[#1E4D8C] to-[#2563EB] text-white text-[9px] tracking-widest uppercase px-3 py-1.5 font-medium">
+                  <span className="absolute top-4 left-4 bg-gradient-to-r from-[#1E4D8C] to-[#2563EB] text-white text-[9px] tracking-widest uppercase px-3 py-1.5 font-medium z-10">
                     {discount}% off
                   </span>
                 )}
+
+                {/* Image counter */}
+                {images.length > 1 && (
+                  <span className="absolute bottom-4 right-4 bg-black/50 text-cream/70 text-[10px] px-2 py-1 z-10">
+                    {mainImg + 1} / {images.length}
+                  </span>
+                )}
+
+                {/* Arrow navigation */}
+                {images.length > 1 && (
+                  <>
+                    <button
+                      onClick={goPrev}
+                      className="absolute left-3 top-1/2 -translate-y-1/2 z-10 w-9 h-9 bg-black/40 hover:bg-black/70 flex items-center justify-center text-cream/70 hover:text-cream transition-all opacity-0 group-hover:opacity-100"
+                    >
+                      <ChevronLeft size={18}/>
+                    </button>
+                    <button
+                      onClick={goNext}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 z-10 w-9 h-9 bg-black/40 hover:bg-black/70 flex items-center justify-center text-cream/70 hover:text-cream transition-all opacity-0 group-hover:opacity-100"
+                    >
+                      <ChevronRight size={18}/>
+                    </button>
+                  </>
+                )}
               </div>
+
               {/* Thumbnails */}
-              {product.images && product.images.length > 1 && (
-                <div className="flex gap-2">
-                  {product.images.map((img,i) => (
-                    <button key={i} onClick={() => setMainImg(i)}
+              {images.length > 1 && (
+                <div className="flex gap-2 flex-wrap">
+                  {images.map((img,i) => (
+                    <button key={i} onClick={() => { setMainImg(i); pauseSlide() }}
                       className={`w-16 h-16 overflow-hidden border-2 transition-all ${mainImg===i?'border-gold':'border-transparent opacity-50 hover:opacity-80'}`}>
                       <img src={img} alt="" className="w-full h-full object-cover"/>
                     </button>
                   ))}
                 </div>
               )}
+
+              {/* Slideshow indicator dots */}
+              {images.length > 1 && (
+                <div className="flex justify-center gap-1.5 mt-3">
+                  {images.map((_,i) => (
+                    <button key={i} onClick={() => { setMainImg(i); pauseSlide() }}
+                      className={`rounded-full transition-all ${mainImg===i?'w-5 h-1.5 bg-gold':'w-1.5 h-1.5 bg-steel/40 hover:bg-steel'}`}/>
+                  ))}
+                </div>
+              )}
             </motion.div>
 
-            {/* Details */}
+            {/* ── Details ─────────────────────────────────────────────── */}
             <motion.div initial={{ opacity:0,x:30 }} animate={{ opacity:1,x:0 }} transition={{ duration:0.7, delay:0.1 }}>
               <p className="text-[9px] tracking-[3px] uppercase text-gold mb-2">Zenzors {product.category?.name}</p>
               <h1 className="font-display text-3xl lg:text-4xl font-light text-cream mb-3">{product.name}</h1>
@@ -175,6 +347,18 @@ export default function ProductDetailPage() {
               </div>
 
               <p className="text-steel text-sm leading-relaxed mb-6">{product.description}</p>
+
+              {/* Colors */}
+              {(product as any).colors && (product as any).colors.length > 0 && (
+                <div className="mb-5">
+                  <p className="text-[10px] tracking-widest uppercase text-steel mb-2">Available Colors</p>
+                  <div className="flex flex-wrap gap-2">
+                    {(product as any).colors.map((c: string) => (
+                      <span key={c} className="px-3 py-1 text-xs border border-blue-900/20 text-cream/70">{c}</span>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {/* Variants */}
               {product.variants && product.variants.length > 0 && (
@@ -237,7 +421,7 @@ export default function ProductDetailPage() {
             </motion.div>
           </div>
 
-          {/* Tabs */}
+          {/* ── Tabs ──────────────────────────────────────────────────── */}
           <div className="mb-4 flex gap-0">
             {(['desc','reviews'] as const).map(t => (
               <button key={t} onClick={() => setTab(t)}
@@ -251,7 +435,83 @@ export default function ProductDetailPage() {
             {tab === 'desc' ? (
               <p className="text-steel text-sm leading-relaxed">{product.description || 'No description available.'}</p>
             ) : (
-              <div className="space-y-6">
+              <div className="space-y-8">
+                {/* ── Write a Review ──────────────────────────────────── */}
+                <div className="border border-blue-900/20 p-6">
+                  <p className="text-[10px] tracking-widest uppercase text-gold mb-5">Write a Review</p>
+
+                  {!currentUserId ? (
+                    <div className="text-center py-4">
+                      <p className="text-steel text-sm mb-3">Sign in to share your experience</p>
+                      <Link href="/auth" className="btn-gold text-xs px-5 py-2">Sign In</Link>
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      {/* Star rating */}
+                      <div>
+                        <p className="text-[10px] tracking-widest uppercase text-steel mb-2">Your Rating *</p>
+                        <StarPicker value={reviewRating} onChange={setReviewRating}/>
+                      </div>
+
+                      {/* Comment */}
+                      <div>
+                        <p className="text-[10px] tracking-widest uppercase text-steel mb-2">Your Review *</p>
+                        <textarea
+                          value={reviewComment}
+                          onChange={e => setReviewComment(e.target.value)}
+                          rows={3}
+                          placeholder="Share your honest experience with this product..."
+                          className="w-full bg-navy-light border border-blue-900/20 px-4 py-3 text-sm text-cream placeholder:text-steel/40 focus:outline-none focus:border-gold/50 transition-colors resize-none"
+                        />
+                      </div>
+
+                      {/* Image upload */}
+                      <div>
+                        <p className="text-[10px] tracking-widest uppercase text-steel mb-2">Photo (optional)</p>
+                        {reviewPreview ? (
+                          <div className="relative inline-block">
+                            <img src={reviewPreview} alt="preview" className="w-24 h-24 object-cover"/>
+                            <button
+                              type="button"
+                              onClick={() => { setReviewFile(null); setReviewPreview(null) }}
+                              className="absolute -top-2 -right-2 w-5 h-5 bg-red-500 rounded-full flex items-center justify-center text-white text-xs"
+                            >
+                              <X size={10}/>
+                            </button>
+                          </div>
+                        ) : (
+                          <label className="flex items-center gap-2 w-fit cursor-pointer border border-dashed border-blue-900/30 px-4 py-3 hover:border-gold/40 transition-colors">
+                            <Camera size={14} className="text-steel"/>
+                            <span className="text-steel text-xs">Add a photo</span>
+                            <input
+                              type="file"
+                              accept="image/*"
+                              className="hidden"
+                              onChange={e => {
+                                const f = e.target.files?.[0]
+                                if (!f) return
+                                setReviewFile(f)
+                                setReviewPreview(URL.createObjectURL(f))
+                              }}
+                            />
+                          </label>
+                        )}
+                      </div>
+
+                      <button
+                        onClick={submitReview}
+                        disabled={submitting || !reviewComment.trim()}
+                        className="btn-gold px-6 py-2.5 flex items-center gap-2 disabled:opacity-50"
+                      >
+                        {submitting
+                          ? <><Loader2 size={13} className="animate-spin"/>Submitting...</>
+                          : <><Send size={13}/>Submit Review</>}
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {/* ── Existing Reviews ──────────────────────────────── */}
                 {reviews.length === 0 ? (
                   <p className="text-steel text-sm">No reviews yet. Be the first to review!</p>
                 ) : reviews.map(r => (
@@ -259,14 +519,23 @@ export default function ProductDetailPage() {
                     <div className="w-10 h-10 bg-navy-light flex items-center justify-center text-steel flex-shrink-0">
                       {r.user?.full_name?.[0] || '?'}
                     </div>
-                    <div>
+                    <div className="flex-1">
                       <div className="flex items-center gap-3 mb-1">
                         <span className="text-cream text-sm">{r.user?.full_name || 'Customer'}</span>
                         <div className="flex gap-0.5">
                           {[...Array(5)].map((_,i) => <Star key={i} size={10} className={i<r.rating?'fill-gold text-gold':'text-steel'}/>)}
                         </div>
+                        <span className="text-steel text-[10px]">{new Date(r.created_at).toLocaleDateString('en-IN')}</span>
                       </div>
                       <p className="text-steel text-sm">{r.comment}</p>
+                      {/* Review images */}
+                      {(r as any).images && (r as any).images.length > 0 && (
+                        <div className="flex gap-2 mt-2">
+                          {(r as any).images.map((img: string, idx: number) => (
+                            <img key={idx} src={img} alt="review" className="w-16 h-16 object-cover border border-blue-900/20"/>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   </div>
                 ))}

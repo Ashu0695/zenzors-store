@@ -42,7 +42,7 @@ export default function ProductCard({ product }: { product: Product }) {
 
           {/* Product image or emoji placeholder */}
           {product.images?.[0] ? (
-            <img src={product.images[0]} alt={product.name}
+            <img src={product.images[0]} alt={product.name} loading="lazy" decoding="async"
               className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"/>
           ) : (
             <motion.div animate={hovered?{ y:-8,scale:1.05 }:{ y:0,scale:1 }} transition={{ duration:0.4 }}

@@ -3,7 +3,7 @@ export interface Product {
   price: number; compare_price: number | null; images: string[];
   category_id: string; category?: Category; variants?: ProductVariant[];
   reviews?: Review[]; stock: number; is_active: boolean; is_featured: boolean;
-  tags: string[]; sku: string; created_at: string; rating_avg?: number; rating_count?: number;
+  tags: string[]; colors?: string[]; sku: string; created_at: string; rating_avg?: number; rating_count?: number;
 }
 export interface Category {
   id: string; name: string; slug: string; image: string | null;
@@ -34,7 +34,8 @@ export interface OrderItem {
 }
 export interface Review {
   id: string; product_id: string; user_id: string;
-  user?: { full_name: string }; rating: number; comment: string; created_at: string;
+  user?: { full_name: string }; rating: number; comment: string;
+  images?: string[]; created_at: string;
 }
 export interface Coupon {
   id: string; code: string; type: 'percentage'|'fixed'; value: number;
